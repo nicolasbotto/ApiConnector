@@ -29,13 +29,14 @@ public class ApiConnector extends DotNetObject {
 
 	
 	@Processor()
-	public void SendMessage(String payload) throws ApiConnectorException {
+	public String SendMessage(String payload) throws ApiConnectorException {
 		String methodName = "SendMessage(System.String payload)";
 		
 		Map<String, Object> arguments = new HashMap<String, Object>();
 		arguments.put("payload", payload);
 		try {
-			this.callMethod(methodName, arguments);
+			Object executeResult = this.callMethod(methodName, arguments);
+			return executeResult.toString();
 		} catch (Exception e) {
 			throw new ApiConnectorException(e);
 		}

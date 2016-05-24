@@ -13,7 +13,7 @@ import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.util.DefaultPrettyPrinter;
 
 public class DotNetBridgeLinux extends BaseDotNetBridge {
-
+	
 	@Override
 	public Object getRequest(String assemblyFullyQualifiedName,
 			String typeName, String methodName, Object dotNetInstanceReference,
@@ -107,12 +107,11 @@ public class DotNetBridgeLinux extends BaseDotNetBridge {
 						return createDotNetReference(response.getPayload().getJni_Value().toString());
 					case "java.lang.String":
 						String dotNetResult = response.getPayload().getJni_Value().toString();
-						String contentType = "text/xml";
-						
-						if(isStringJsonRepresentation(dotNetResult))
-						{
-							contentType = "application/json";
-						}
+//						String contentType = "text/xml";
+//						if(isStringJsonRepresentation(dotNetResult))
+//						{
+//							contentType = "application/json";
+//						}
 						
 						//msg.setProperty("Content-Type", contentType, PropertyScope.OUTBOUND);
 						
@@ -144,13 +143,12 @@ public class DotNetBridgeLinux extends BaseDotNetBridge {
 		}
 	}
 	
-	private static boolean isStringJsonRepresentation(String data)
-	{
-		String payloadContent = data.trim();
-		
-		return (payloadContent.startsWith("[") && payloadContent.endsWith("]")) ||
-				payloadContent.startsWith("{") && payloadContent.endsWith("}");
-	}
+//	private static boolean isStringJsonRepresentation(String data) {
+//		String payloadContent = data.trim();
+//		
+//		return (payloadContent.startsWith("[") && payloadContent.endsWith("]")) ||
+//				payloadContent.startsWith("{") && payloadContent.endsWith("}");
+//	}
 
 	private void ToJsonObject(JsonGenerator writer, Object obj) throws IOException, IllegalAccessException, InvocationTargetException {
 

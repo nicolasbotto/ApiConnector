@@ -18,9 +18,6 @@ import java.util.Enumeration;
 import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import org.mule.api.annotations.Module;
-import org.mule.api.annotations.lifecycle.Stop;
-//import org.mule.api.annotations.lifecycle.Dispose;
 
 import org.apache.log4j.Logger;
 import org.mule.util.ExceptionUtils;

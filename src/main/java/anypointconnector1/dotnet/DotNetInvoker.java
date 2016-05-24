@@ -17,7 +17,6 @@ public class DotNetInvoker {
 	}
 	
 	private static final BaseDotNetBridge DOT_NET_BRIDGE;
-	
 	static {
 		// Check which one create depending on platform
 		if(BaseDotNetBridge.isLinux())
@@ -47,52 +46,7 @@ public class DotNetInvoker {
 	}
 
 	private Object getRequest(String assemblyFullyQualifiedName, String typeName, String methodName, Object dotNetInstanceReference, Map<String, Object> arguments) throws Exception {
-		Object request = DOT_NET_BRIDGE.getRequest(assemblyFullyQualifiedName, typeName, methodName, 
-				dotNetInstanceReference, arguments, CONNECTOR_ASSEMBLY_FILE_NAME);
-		
-		return request;
-	}
-	
-	private static Map<String, Object> transformArguments(Map<String, Object> arguments) {
-		if(arguments != null) {
-			for (Map.Entry<String, Object> entry : arguments.entrySet()) {
-				Object value = entry.getValue();
-				if(value instanceof Map<?,?>) {
-					value = getArgumentInJson(entry);
-					arguments.put(entry.getKey(), value);
-				}
-	        }
-		}
-		
-		return arguments;
-	}
-	
-	@SuppressWarnings("unchecked")
-	private static Object getArgumentInJson(Map.Entry<String, Object> entry) {
-		String jsonFormat = "\"%s\" : %s";
-		
-		Object value = entry.getValue();
-		if(value instanceof Map<?,?>) {
-			Map<String, Object> complex = (Map<String, Object>)value;
-			StringBuilder sb = new StringBuilder();
-			sb.append("{");
-			for (Map.Entry<String, Object> param : complex.entrySet()) {
-				sb.append(String.format(jsonFormat, param.getKey(), getArgumentInJson(param)));
-				sb.append(", ");
-	        }
-
-			if(sb.length() > 1) {
-				sb = sb.delete(sb.length()-2, sb.length());
-            }
-			
-			sb.append("}");
-			value = sb.toString();
-		}
-		else {
-			value = "\"" + value.toString() + "\"";
-		}
-		
-		return value;
+	    return DOT_NET_BRIDGE.getRequest(assemblyFullyQualifiedName, typeName, methodName, dotNetInstanceReference, arguments, CONNECTOR_ASSEMBLY_FILE_NAME);
 	}
 	
 	private static Object processOutput(Object result) throws Exception {

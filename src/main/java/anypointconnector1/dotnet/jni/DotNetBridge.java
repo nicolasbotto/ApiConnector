@@ -1,43 +1,11 @@
 package anypointconnector1.dotnet.jni;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Enumeration;
 import java.util.Map;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 
-import org.apache.log4j.Logger;
-
-import anypointconnector1.dotnet.DotNetInvoker;
-
-
-
-
-
-
-
-
-
-
-
-//import org.mule.modules.dotnet.instrumentation.DotNetNotificationManager;
-import org.mule.util.ExceptionUtils;
-
-public class DotNetBridge extends BaseDotNetBridge 
-{
+public class DotNetBridge extends BaseDotNetBridge {
+	
 	@Override
 	public Object getRequest(String assemblyFullyQualifiedName,
 			String typeName, String methodName, Object dotNetInstanceReference,
@@ -73,4 +41,5 @@ public class DotNetBridge extends BaseDotNetBridge
 	{
 		return getResultMethod.invoke(response);
 	}
+
 }
