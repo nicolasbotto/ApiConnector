@@ -18,6 +18,9 @@ import java.util.Enumeration;
 import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import org.mule.api.annotations.Module;
+import org.mule.api.annotations.lifecycle.Stop;
+//import org.mule.api.annotations.lifecycle.Dispose;
 
 import org.apache.log4j.Logger;
 import org.mule.util.ExceptionUtils;
@@ -56,6 +59,8 @@ public abstract class BaseDotNetBridge {
 	
 	private static final String BRIDGE_DLL_FILENAME_PREFIX = "JniBridge";
 	private static Path bridgeDllFilePath;
+	private static Path monoServerPath;
+	private static Process ps = null;
 	
 	static {
 		URI domainCodeSourceLocationUri = null;
@@ -103,6 +108,7 @@ public abstract class BaseDotNetBridge {
 		{
 			extractedBridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + ".so");
 			bridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + ".so");
+			monoServerPath = workingPath.resolve("anypointmonoserver");
 		}
 		else
 		{
@@ -123,19 +129,19 @@ public abstract class BaseDotNetBridge {
 		
 		// Discover class loader to load the libraries on
 		ClassLoader parentClassLoader = DotNetInvoker.class.getClassLoader();
-		
-		// Find Bridge's jar file
-		Path jniBridgeJar = workingPath.resolve(jniBridgePrefix + "-" + jniBridgeVersion + ".jar");
-		URL jniBridgeJarUrl = null;
-		try {
-			jniBridgeJarUrl = jniBridgeJar.toUri().toURL();
-			log("jniBridgeJarUrl: " + jniBridgeJarUrl);
-		} catch (MalformedURLException e) {
-			log("Incorrect jniBridgeJarUrl: " + jniBridgeJar.toString(), e);
-		}
-		
+
 		if(!isLinux())
 		{
+			// Find Bridge's jar file
+			Path jniBridgeJar = workingPath.resolve(jniBridgePrefix + "-" + jniBridgeVersion + ".jar");
+			URL jniBridgeJarUrl = null;
+			try {
+				jniBridgeJarUrl = jniBridgeJar.toUri().toURL();
+				log("jniBridgeJarUrl: " + jniBridgeJarUrl);
+			} catch (MalformedURLException e) {
+				log("Incorrect jniBridgeJarUrl: " + jniBridgeJar.toString(), e);
+			}
+			
 			while(parentClassLoader != null)
 			{
 				// Runtime: shared class loader
@@ -174,9 +180,29 @@ public abstract class BaseDotNetBridge {
 			} catch (ClassNotFoundException e) {
 				log("Error loading Jni Bridge class.", e);
 			}
+			
+			if (bridgeInstance == null) {
+				try {
+					bridgeInstance = bridgeClass.newInstance();
+					log("Jni Bridge instance created correctly.");
+				} catch (InstantiationException | IllegalAccessException e) {
+					log("Error creating a Jni Bridge instance.", e);
+				}
+			}
 		}
 		else
 		{
+			// Find Bridge's jar file
+			Path jniBridgeJar = workingPath.resolve("jniBridge.linux-" + jniBridgeVersion + ".jar");
+			URL jniBridgeJarUrl = null;
+			try {
+				jniBridgeJarUrl = jniBridgeJar.toUri().toURL();
+				log("jniBridgeJarUrl: " + jniBridgeJarUrl);
+			} catch (MalformedURLException e) {
+				log("Incorrect jniBridgeJarUrl: " + jniBridgeJar.toString(), e);
+			}
+			
+			//jniBridge.linux-1.0.0.0.jar
 			// Load Jni Bridge jar in class loader
 			log("Loading Jni Bridge jar into class loader from: " + jniBridgeJarUrl.toString());
 			try {
@@ -195,17 +221,17 @@ public abstract class BaseDotNetBridge {
 			catch (ClassNotFoundException | NoSuchMethodException | SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
 				log("Error loading Jni Bridge class.", e);
 			}
-		}
-		
-		if (bridgeInstance == null) {
-			try {
-				bridgeInstance = bridgeClass.newInstance();
-				log("Jni Bridge instance created correctly.");
-			} catch (InstantiationException | IllegalAccessException e) {
-				log("Error creating a Jni Bridge instance.", e);
+			
+			if (bridgeInstance == null) {
+				try {
+					bridgeInstance = bridgeClass.newInstance();
+					log("Jni Bridge instance created correctly.");
+				} catch (InstantiationException | IllegalAccessException e) {
+					log("Error creating a Jni Bridge instance.", e);
+				}
 			}
 		}
-		
+
 		// Initialize the Bridge
 		log("Jni Bridge initialization start.");
 		boolean shouldRetryToInitBridge = false;
@@ -272,7 +298,25 @@ public abstract class BaseDotNetBridge {
 			}
 			else
 			{
-				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", Object.class);
+				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", byte[].class);
+				
+				// Init IPC server
+				if(ps != null)
+				{
+					ps.destroy();
+				}
+				
+				File file = new File(monoServerPath.toString());
+				
+				if(!file.canExecute())
+				{
+					file.setExecutable(true);
+				}
+				
+				// run server
+				ProcessBuilder pb = null;
+				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString());
+	            ps = pb.start();
 			}
 		} catch (Exception e) {
 			log("Error obtaining required method from Jni Request", e);
