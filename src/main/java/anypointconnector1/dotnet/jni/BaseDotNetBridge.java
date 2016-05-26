@@ -100,17 +100,20 @@ public abstract class BaseDotNetBridge {
 		// - allow the redeploy to replace the dll (not possible if dll is loaded in another process)
 		String filePosfix = Long.toString(System.nanoTime());
 		Path extractedBridgeDllFilePath;
+		Path jniBridgeJar;
 		
 		if(isLinux())
 		{
 			extractedBridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + ".so");
-			bridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + ".so");
+			bridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + "-" + filePosfix + ".so");
 			monoServerPath = workingPath.resolve("anypointmonoserver");
+			jniBridgeJar = workingPath.resolve("jniBridge.linux-" + jniBridgeVersion + ".jar");
 		}
 		else
 		{
 			extractedBridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + getRuntime() + ".dll");
 			bridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + getRuntime() + "-" + filePosfix + ".dll");
+			jniBridgeJar = workingPath.resolve(jniBridgePrefix + "-" + jniBridgeVersion + ".jar");
 		}
 		
 		try {
@@ -123,163 +126,153 @@ public abstract class BaseDotNetBridge {
 			log("Error: unable to find bridge file to load '" + bridgeDllFilePath.toString() + "'.");
 		}
 
-		
 		// Discover class loader to load the libraries on
 		ClassLoader parentClassLoader = DotNetInvoker.class.getClassLoader();
-
-		if(!isLinux())
+		
+		// Find Bridge's jar file
+		URL jniBridgeJarUrl = null;
+		try 
 		{
-			// Find Bridge's jar file
-			Path jniBridgeJar = workingPath.resolve(jniBridgePrefix + "-" + jniBridgeVersion + ".jar");
-			URL jniBridgeJarUrl = null;
-			try {
-				jniBridgeJarUrl = jniBridgeJar.toUri().toURL();
-				log("jniBridgeJarUrl: " + jniBridgeJarUrl);
-			} catch (MalformedURLException e) {
-				log("Incorrect jniBridgeJarUrl: " + jniBridgeJar.toString(), e);
+			jniBridgeJarUrl = jniBridgeJar.toUri().toURL();
+			log("jniBridgeJarUrl: " + jniBridgeJarUrl);
+		} 
+		catch (MalformedURLException e) 
+		{
+			log("Incorrect jniBridgeJarUrl: " + jniBridgeJar.toString(), e);
+		}
+
+		while(parentClassLoader != null)
+		{
+			// Runtime: shared class loader
+			if(parentClassLoader.getClass().getName().startsWith("org.mule.module.launcher.MuleSharedDomainClassLoader"))
+			{
+				log("Found Mule shared class loader.");
+				break;
 			}
 			
-			while(parentClassLoader != null)
+			// Studio class loader
+			if(parentClassLoader.getClass().getName().startsWith("org.mule.tooling.core.classloader.MuleClassLoader"))
 			{
-				// Runtime: shared class loader
-				if(parentClassLoader.getClass().getName().startsWith("org.mule.module.launcher.MuleSharedDomainClassLoader"))
-				{
-					log("Found Mule shared class loader.");
+				// Studio: shared class loader (when the parent is no Mule's)
+				if (!parentClassLoader.getParent().getClass().getName().startsWith("org.mule.tooling.core.classloader.MuleClassLoader")) {
+					log("Found Studio shared class loader.");
 					break;
 				}
-				
-				// Studio class loader
-				if(parentClassLoader.getClass().getName().startsWith("org.mule.tooling.core.classloader.MuleClassLoader"))
-				{
-					// Studio: shared class loader (when the parent is no Mule's)
-					if (!parentClassLoader.getParent().getClass().getName().startsWith("org.mule.tooling.core.classloader.MuleClassLoader")) {
-						log("Found Studio shared class loader.");
-						break;
-					}
-				}
-				
-				parentClassLoader = parentClassLoader.getParent();
 			}
 			
-			if(parentClassLoader == null)
+			parentClassLoader = parentClassLoader.getParent();
+		}
+		
+		if(parentClassLoader == null)
+		{
+			log("Can't Mule or Studio shared class loader. For unit testing purposes, will use the default one.");
+			parentClassLoader = DotNetInvoker.class.getClassLoader();
+		}
+			
+		connectorClassLoader = new URLClassLoader(new URL[] { jniBridgeJarUrl }, parentClassLoader);
+			
+		// Load Jni Bridge jar in class loader
+		log("Loading Jni Bridge jar into class loader from: " + jniBridgeJarUrl.toString());
+		try 
+		{
+			bridgeClass = connectorClassLoader.loadClass("org.mule.api.jni.Bridge");
+			log("Jni Bridge class loaded correctly.");
+		} 
+		catch (ClassNotFoundException e) 
+		{
+			log("Error loading Jni Bridge class.", e);
+		}
+			
+		if (bridgeInstance == null) 
+		{
+			try 
 			{
-				log("Can't Mule or Studio shared class loader. For unit testing purposes, will use the default one.");
-				parentClassLoader = DotNetInvoker.class.getClassLoader();
+				bridgeInstance = bridgeClass.newInstance();
+				log("Jni Bridge instance created correctly.");
+			}
+			catch (InstantiationException | IllegalAccessException e) 
+			{
+				log("Error creating a Jni Bridge instance.", e);
+			}
+		}
+		
+		if(isLinux())
+		{
+			try 
+			{
+				dotNetReferenceClass = connectorClassLoader.loadClass("org.mule.api.jni.DotNetInstanceReference");
+				getDotNetReferenceId = dotNetReferenceClass.getMethod("getDotNetInstanceId");
+			} 
+			catch (ClassNotFoundException | NoSuchMethodException | SecurityException | IllegalArgumentException e) 
+			{
+				log("Error loading DotNetReference class.", e);
 			}
 			
-			connectorClassLoader = new URLClassLoader(new URL[] { jniBridgeJarUrl }, parentClassLoader);
-			
-			// Load Jni Bridge jar in class loader
-			log("Loading Jni Bridge jar into class loader from: " + jniBridgeJarUrl.toString());
-			try {
-				bridgeClass = connectorClassLoader.loadClass("org.mule.api.jni.Bridge");
-				log("Jni Bridge class loaded correctly.");
-			} catch (ClassNotFoundException e) {
-				log("Error loading Jni Bridge class.", e);
+			try
+			{
+				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", byte[].class);
+			} 
+			catch (NoSuchMethodException | SecurityException | IllegalArgumentException e) 
+			{
+				log("Error obtaining required method invokeNetMethod.", e);
 			}
 			
-			if (bridgeInstance == null) {
-				try {
-					bridgeInstance = bridgeClass.newInstance();
-					log("Jni Bridge instance created correctly.");
-				} catch (InstantiationException | IllegalAccessException e) {
-					log("Error creating a Jni Bridge instance.", e);
-				}
+			// Init IPC server
+			if(ps != null)
+			{
+				ps.destroy();
 			}
+			
+			File file = new File(monoServerPath.toString());
+			
+			if(!file.canExecute())
+			{
+				file.setExecutable(true);
+			}
+			
+			// run server
+			try
+			{
+				ProcessBuilder pb = null;
+				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString());
+	            ps = pb.start();
+	            
+	            Thread.sleep(1000);
+			}
+			catch(java.io.IOException | java.lang.InterruptedException e)
+			{
+				log("Error starting server: " + e.getMessage());
+			}
+            // add logic to wait for the server to start
 		}
 		else
 		{
-			// Find Bridge's jar file
-			Path jniBridgeJar = workingPath.resolve("jniBridge.linux-" + jniBridgeVersion + ".jar");
-			URL jniBridgeJarUrl = null;
-			try {
-				jniBridgeJarUrl = jniBridgeJar.toUri().toURL();
-				log("jniBridgeJarUrl: " + jniBridgeJarUrl);
-			} catch (MalformedURLException e) {
-				log("Incorrect jniBridgeJarUrl: " + jniBridgeJar.toString(), e);
-			}
-			
-			//jniBridge.linux-1.0.0.0.jar
-			// Load Jni Bridge jar in class loader
-			log("Loading Jni Bridge jar into class loader from: " + jniBridgeJarUrl.toString());
-			try {
-				
-				Method addUrl = URLClassLoader.class.getDeclaredMethod("addURL", new Class[] {URL.class});
-				addUrl.setAccessible(true);
-				addUrl.invoke(parentClassLoader, new Object[] { jniBridgeJarUrl });
-				
-				bridgeClass = parentClassLoader.loadClass("org.mule.api.jni.Bridge");
-				log("Jni Bridge class loaded correctly.");
-				
-				dotNetReferenceClass = parentClassLoader.loadClass("org.mule.api.jni.DotNetInstanceReference");
-				getDotNetReferenceId = dotNetReferenceClass.getMethod("getDotNetInstanceId");
-				
-			} 
-			catch (ClassNotFoundException | NoSuchMethodException | SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				log("Error loading Jni Bridge class.", e);
-			}
-			
-			if (bridgeInstance == null) {
-				try {
-					bridgeInstance = bridgeClass.newInstance();
-					log("Jni Bridge instance created correctly.");
-				} catch (InstantiationException | IllegalAccessException e) {
-					log("Error creating a Jni Bridge instance.", e);
-				}
-			}
-		}
-
-		// Initialize the Bridge
-		log("Jni Bridge initialization start.");
-		boolean shouldRetryToInitBridge = false;
-		try {
-			initJniBridge(bridgeDllFilePath);
-			log("Jni Bridge initialized successfully.");
-		} catch (Exception e) {
-			if (ExceptionUtils.getDeepestOccurenceOfType(e, UnsatisfiedLinkError.class) != null) {
-				log("UnsatisfiedLinkError initializing Jni Bridge. This is most commonnly caused by missing C++ runtime. Will extract the missing libraries and try again.");
-				shouldRetryToInitBridge = true;
-			} else {
-				log("Error initializing Jni Bridge.", e);
-			}
-		}
-		
-		if (shouldRetryToInitBridge) {
-			log("Load VC++ Runtime libraries.");
-			loadVCRuntime(workingPath);
-			
-			try {
-				initJniBridge(bridgeDllFilePath);
-				log("Jni Bridge initialized successfully.");
-			} catch (Exception e) {
-				log("Error initializing Jni Bridge.", e);
-			}
-		}
-		
-		// Set the Logger
-		try {
-			if(!isLinux())
+			// Set the Logger
+			try 
 			{
 				Class<?> loggerClass = connectorClassLoader.loadClass("org.mule.api.jni.JniLogger");
 				Object jniLogger = loggerClass.getConstructor(org.apache.log4j.Logger.class).newInstance(LOGGER);
 				Method setLogger = bridgeClass.getMethod("setLogger", loggerClass);
 				Object[] paramLogger = new Object[] { jniLogger };
 				setLogger.invoke(bridgeInstance, paramLogger);
+			} 
+			catch (Exception e) 
+			{
+				log("Error trying to configure logger in Jni Bridge.", e);
 			}
-		} catch (Exception e) {
-			log("Error trying to configure logger in Jni Bridge.", e);
-		}
-		
-		// Set the notification manager
-//			try {
-//				Method setJniNotification = bridgeClass.getMethod("setInstrumentationManager", Object.class);
-//				setJniNotification.invoke(bridgeInstance, new Object[] { NOTIFICATION_MANAGER });
-//			} catch (Exception e) {
-//				log("Error trying to configure intrumentation manager in Jni Bridge.", e);
-//			}
-		
-		try {
-			if(!isLinux())
+			
+			try 
+			{
+				responseClass = connectorClassLoader.loadClass("org.mule.api.jni.Response");
+				getResultMethod = responseClass.getMethod("getResult");
+				javaCallbackClass = connectorClassLoader.loadClass("org.mule.api.jni.JavaCallback");
+			} 
+			catch (Exception e) 
+			{
+				log("Error obtaining required method from Jni Response", e);
+			}
+			
+			try 
 			{
 				requestClass = connectorClassLoader.loadClass("org.mule.api.jni.Request");
 				setConnectorAssemblyFilePathMethod = requestClass.getMethod("setConnectorAssemblyFilePath", String.class);
@@ -290,45 +283,65 @@ public abstract class BaseDotNetBridge {
 				setMethodArgumentsMethod = requestClass.getMethod("setMethodArguments", Map.class);
 				setLogMethod = requestClass.getMethod("setLog", boolean.class);
 				setFullTrustMethod = requestClass.getMethod("setFullTrust", boolean.class);
-				
-				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", requestClass);
-			}
-			else
+			} 
+			catch (Exception e) 
 			{
-				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", byte[].class);
-				
-				// Init IPC server
-				if(ps != null)
-				{
-					ps.destroy();
-				}
-				
-				File file = new File(monoServerPath.toString());
-				
-				if(!file.canExecute())
-				{
-					file.setExecutable(true);
-				}
-				
-				// run server
-				ProcessBuilder pb = null;
-				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString());
-	            ps = pb.start();
+				log("Error obtaining required method from Jni Request", e);
 			}
-		} catch (Exception e) {
-			log("Error obtaining required method from Jni Request", e);
+			
+			try
+			{
+				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", requestClass);
+			} 
+			catch (Exception e) 
+			{
+				log("Error obtaining required method invokeNetMethod", e);
+			}
+		}	
+		
+		// Set the notification manager
+//			try {
+//				Method setJniNotification = bridgeClass.getMethod("setInstrumentationManager", Object.class);
+//				setJniNotification.invoke(bridgeInstance, new Object[] { NOTIFICATION_MANAGER });
+//			} catch (Exception e) {
+//				log("Error trying to configure intrumentation manager in Jni Bridge.", e);
+//			}
+
+		// Initialize the Bridge
+		log("Jni Bridge initialization start.");
+		boolean shouldRetryToInitBridge = false;
+		try 
+		{
+			initJniBridge(bridgeDllFilePath);
+			log("Jni Bridge initialized successfully.");
+		} 
+		catch (Exception e) 
+		{
+			if (ExceptionUtils.getDeepestOccurenceOfType(e, UnsatisfiedLinkError.class) != null) {
+				log("UnsatisfiedLinkError initializing Jni Bridge. This is most commonnly caused by missing C++ runtime. Will extract the missing libraries and try again.");
+				shouldRetryToInitBridge = true;
+			} else {
+				log("Error initializing Jni Bridge.", e);
+			}
 		}
 		
-		try {
-			if(!isLinux())
+		if(!isLinux())
+		{
+			if (shouldRetryToInitBridge) 
 			{
-				responseClass = connectorClassLoader.loadClass("org.mule.api.jni.Response");
-				getResultMethod = responseClass.getMethod("getResult");
-				javaCallbackClass = connectorClassLoader.loadClass("org.mule.api.jni.JavaCallback");
-			}
+				log("Load VC++ Runtime libraries.");
+				loadVCRuntime(workingPath);
 				
-		} catch (Exception e) {
-			log("Error obtaining required method from Jni Response", e);
+				try 
+				{
+					initJniBridge(bridgeDllFilePath);
+					log("Jni Bridge initialized successfully.");
+				} 
+				catch (Exception e) 
+				{
+					log("Error initializing Jni Bridge.", e);
+				}
+			}
 		}
 	}
 
