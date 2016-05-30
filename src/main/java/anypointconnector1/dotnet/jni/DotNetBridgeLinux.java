@@ -70,7 +70,7 @@ public class DotNetBridgeLinux extends BaseDotNetBridge {
 	@Override
 	public Object processRequest(Object request) throws IllegalAccessException,
 			IllegalArgumentException, InvocationTargetException {
-		Object val = invokeNetMethod.invoke(bridgeInstance, new Object[] { request } );
+		Object val = invokeNetMethod.invoke(bridgeInstance, new Object[] { SOCKETNAME, request } );
 		return val;
 	}
 

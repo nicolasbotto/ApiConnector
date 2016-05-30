@@ -1,9 +1,11 @@
 package anypointconnector1.dotnet.jni;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -51,6 +53,7 @@ public abstract class BaseDotNetBridge {
 	private static Path workingPath;
 	private static ClassLoader connectorClassLoader;
 	
+	protected static final String SOCKETNAME = "/tmp/apiconnector";
 	private static String jniBridgePrefix = "JniBridge";
 	private static String jniBridgeVersion = "1.0.0.0";
 	
@@ -210,7 +213,7 @@ public abstract class BaseDotNetBridge {
 			
 			try
 			{
-				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", byte[].class);
+				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", String.class, byte[].class);
 			} 
 			catch (NoSuchMethodException | SecurityException | IllegalArgumentException e) 
 			{
@@ -234,16 +237,27 @@ public abstract class BaseDotNetBridge {
 			try
 			{
 				ProcessBuilder pb = null;
-				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString());
+				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString(), SOCKETNAME);
 	            ps = pb.start();
-	            
-	            Thread.sleep(1000);
+	            // add logic to wait for the server to start
+	            String line;
+	            BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream(), "UTF-8"));
+
+	            while ((line = reader.readLine()) != null)
+	            {
+	                if(line.equalsIgnoreCase("Server started"))
+	                {
+	                	break;
+	                }
+	            }
+
+	            reader.close();
+	            //Thread.sleep(1000);
 			}
-			catch(java.io.IOException | java.lang.InterruptedException e)
+			catch(java.io.IOException e)
 			{
 				log("Error starting server: " + e.getMessage());
 			}
-            // add logic to wait for the server to start
 		}
 		else
 		{
