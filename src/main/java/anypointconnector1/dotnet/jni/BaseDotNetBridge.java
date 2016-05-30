@@ -238,23 +238,37 @@ public abstract class BaseDotNetBridge {
 			{
 				ProcessBuilder pb = null;
 				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString(), SOCKETNAME);
-	            ps = pb.start();
-	            // add logic to wait for the server to start
+				pb.redirectErrorStream(true);
+				Process ps = pb.start();
+				
 	            String line;
 	            BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream(), "UTF-8"));
-
+	            
+	            StringBuilder sb = new StringBuilder();
+	            boolean started = false;
+	            
 	            while ((line = reader.readLine()) != null)
 	            {
 	                if(line.equalsIgnoreCase("Server started"))
 	                {
+	                	started = true;
 	                	break;
+	                }
+	                else
+	                {
+	                	sb.append(line);
 	                }
 	            }
 
 	            reader.close();
+	            
+	            if(!started)
+	            {
+	            	throw new Exception(sb.toString());
+	            }
 	            //Thread.sleep(1000);
 			}
-			catch(java.io.IOException e)
+			catch(Exception e)
 			{
 				log("Error starting server: " + e.getMessage());
 			}
