@@ -18,6 +18,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Enumeration;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -61,6 +63,7 @@ public abstract class BaseDotNetBridge {
 	private static Path bridgeDllFilePath;
 	private static Path monoServerPath;
 	private static Process ps = null;
+	private static boolean monoServerStarted = false;
 	
 	static {
 		URI domainCodeSourceLocationUri = null;
@@ -234,8 +237,22 @@ public abstract class BaseDotNetBridge {
 			}
 			
 			// run server
+			
 			try
 			{
+				Timer timer = new Timer();
+	            timer.schedule(new TimerTask()
+            	{
+            		@Override
+	                public void run() 
+            		{
+            			if(!monoServerStarted)
+	                    {
+            				log("Mono Server didn't start.");
+	                    }
+        			}
+	             }, 5000);
+	             
 				ProcessBuilder pb = null;
 				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString(), SOCKETNAME);
 				pb.redirectErrorStream(true);
@@ -245,13 +262,12 @@ public abstract class BaseDotNetBridge {
 	            BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream(), "UTF-8"));
 	            
 	            StringBuilder sb = new StringBuilder();
-	            boolean started = false;
 	            
 	            while ((line = reader.readLine()) != null)
 	            {
 	                if(line.equalsIgnoreCase("Server started"))
 	                {
-	                	started = true;
+	                	monoServerStarted = true;
 	                	break;
 	                }
 	                else
@@ -262,11 +278,10 @@ public abstract class BaseDotNetBridge {
 
 	            reader.close();
 	            
-	            if(!started)
+	            if(!monoServerStarted)
 	            {
 	            	throw new Exception(sb.toString());
 	            }
-	            //Thread.sleep(1000);
 			}
 			catch(Exception e)
 			{
