@@ -221,11 +221,11 @@ public abstract class BaseDotNetBridge {
 			{
 				log("Error loading DotNetReference class.", e);
 			}
+
+			final File pidTmp = new File(pidFilePath.toString());
 			
 			try
 			{
-				File pidTmp = new File(pidFilePath.toString());
-				
 				if(pidTmp.exists())
 				{
 					String pidContent = new String(Files.readAllBytes(pidFilePath), StandardCharsets.UTF_8);
@@ -275,7 +275,7 @@ public abstract class BaseDotNetBridge {
 				ProcessBuilder pb = null;
 				pb = new ProcessBuilder(monoServerPath.toString(), workingPath.toString(), SOCKETNAME);
 				pb.redirectErrorStream(true);
-				Process ps = pb.start();
+				final Process ps = pb.start();
 				
 	            String line;
 	            BufferedReader reader = new BufferedReader(new InputStreamReader(ps.getInputStream(), "UTF-8"));
@@ -301,6 +301,25 @@ public abstract class BaseDotNetBridge {
 	            {
 	            	throw new Exception(sb.toString());
 	            }
+	            
+	            // attach to JVM shutdown to remove process and file
+	            Runtime.getRuntime().addShutdownHook(
+	            		new Thread(
+	            			new Runnable() 
+            				{
+				                public void run() 
+				                {
+				                	if(ps != null)
+				                	{
+				                        ps.destroy();
+				                    }
+				                	
+				                	if(pidTmp != null)
+				                	{
+				                		pidTmp.delete();
+				                	}
+				                }
+            				}));
 	            
 	            try 
 	            {
