@@ -3,9 +3,11 @@ package anypointconnector1.dotnet.jni;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -13,10 +15,15 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -48,10 +55,10 @@ public abstract class BaseDotNetBridge {
 	protected static Method setLogMethod;
 	protected static Method setFullTrustMethod;
 	protected static Method getDotNetReferenceId;
-	
 	protected static Method invokeNetMethod;
 	protected static Method getResultMethod;
 	
+	private static Path pidFilePath;
 	private static Path workingPath;
 	private static ClassLoader connectorClassLoader;
 	
@@ -114,6 +121,7 @@ public abstract class BaseDotNetBridge {
 			bridgeDllFilePath = workingPath.resolve(BRIDGE_DLL_FILENAME_PREFIX + "-" + filePosfix + ".so");
 			monoServerPath = workingPath.resolve("anypointmonoserver");
 			jniBridgeJar = workingPath.resolve("jniBridge.linux-" + jniBridgeVersion + ".jar");
+			pidFilePath = workingPath.resolve("monoserverpid");
 		}
 		else
 		{
@@ -216,19 +224,30 @@ public abstract class BaseDotNetBridge {
 			
 			try
 			{
-				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", String.class, byte[].class);
-			} 
-			catch (NoSuchMethodException | SecurityException | IllegalArgumentException e) 
+				File pidTmp = new File(pidFilePath.toString());
+				
+				if(pidTmp.exists())
+				{
+					String pidContent = new String(Files.readAllBytes(pidFilePath), StandardCharsets.UTF_8);
+					
+					try
+					{
+						Runtime.getRuntime().exec("kill " + pidContent);
+					}
+					catch(java.io.IOException e)
+					{
+						log("Error killing process: " + pidContent + " : " + e.getMessage());
+					}
+					
+					pidTmp.delete();
+				}
+			}
+			catch(java.io.IOException e)
 			{
-				log("Error obtaining required method invokeNetMethod.", e);
+				log("Error reading pid process file: " + pidFilePath.toString());
 			}
 			
 			// Init IPC server
-			if(ps != null)
-			{
-				ps.destroy();
-			}
-			
 			File file = new File(monoServerPath.toString());
 			
 			if(!file.canExecute())
@@ -282,10 +301,36 @@ public abstract class BaseDotNetBridge {
 	            {
 	            	throw new Exception(sb.toString());
 	            }
+	            
+	            try 
+	            {
+					Field f = ps.getClass().getDeclaredField("pid");
+					f.setAccessible(true);
+					int pid = f.getInt(ps);
+					
+					List<String> pidLine = Arrays.asList(pid+"");
+					
+					// save to file
+					Files.write(pidFilePath, pidLine, StandardCharsets.UTF_8, StandardOpenOption.CREATE);
+	            } 
+	            catch (Throwable e) 
+	            { 
+	            	log("Error writing pid process file: " + pidFilePath.toString() + " : " + e.getMessage());
+	            }
+	            
 			}
 			catch(Exception e)
 			{
 				log("Error starting server: " + e.getMessage());
+			}
+			
+			try
+			{
+				invokeNetMethod = bridgeClass.getMethod("invokeNetMethod", String.class, byte[].class);
+			} 
+			catch (NoSuchMethodException | SecurityException | IllegalArgumentException e) 
+			{
+				log("Error obtaining required method invokeNetMethod.", e);
 			}
 		}
 		else
