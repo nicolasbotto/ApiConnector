@@ -580,7 +580,7 @@ public abstract class BaseDotNetBridge {
 	}
 
 	public abstract Object getRequest(String assemblyFullyQualifiedName, String typeName, String methodName, Object dotNetInstanceReference, Map<String, Object> arguments, String connectorAssemblyFileName) throws Exception, IllegalArgumentException, InvocationTargetException;
-	public abstract Object processRequest(Object request) throws IllegalAccessException, IllegalArgumentException, InvocationTargetException;
+	public abstract Object processRequest(Object request) throws Exception;
 	public abstract Object createJavaCallback(Object obj, Method method) throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException, NoSuchMethodException, SecurityException;
 	public abstract Object getResult(Object response) throws IllegalAccessException, IllegalArgumentException, InvocationTargetException;
 }

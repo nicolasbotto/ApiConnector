@@ -68,10 +68,40 @@ public class DotNetBridgeLinux extends BaseDotNetBridge {
 	}
 
 	@Override
-	public Object processRequest(Object request) throws IllegalAccessException,
-			IllegalArgumentException, InvocationTargetException {
-		Object val = invokeNetMethod.invoke(bridgeInstance, new Object[] { SOCKETNAME, request } );
-		return val;
+	public Object processRequest(Object request) throws Exception {
+		// Add retry
+		try
+		{
+			Object val = invokeNetMethod.invoke(bridgeInstance, new Object[] { SOCKETNAME, request } );
+			return val;
+		}
+		catch(InvocationTargetException ex) // java.lang.Exception: The server is down: Connection refused
+		{
+			Throwable target = ex.getTargetException();
+			String targetMessage = target.getMessage();
+			
+			if(targetMessage.contains("The server is down:"))
+			{
+				int retry = 0;
+				while(retry <= 3)
+				{
+					try
+					{
+						Object val = invokeNetMethod.invoke(bridgeInstance, new Object[] { SOCKETNAME, request } );
+						return val;
+					}
+					catch(Exception ez) {} //swallow it
+					finally
+					{
+						retry++;
+					}
+				}
+				
+				throw new Exception("Request couldn't be processed: " + targetMessage);
+			}
+			
+			throw ex;
+		}
 	}
 
 	@Override
